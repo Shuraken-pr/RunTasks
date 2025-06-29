@@ -1,0 +1,60 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{2E897B95-6885-4170-A733-3101A4536926}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="RunTasks.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="..\FindDLL\FindDLL.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="..\ExecuteDLL\ExecuteDLL.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="RunTasks">
+        <MSBuild Projects="RunTasks.dproj"/>
+    </Target>
+    <Target Name="RunTasks:Clean">
+        <MSBuild Projects="RunTasks.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="RunTasks:Make">
+        <MSBuild Projects="RunTasks.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="FindDLL">
+        <MSBuild Projects="..\FindDLL\FindDLL.dproj"/>
+    </Target>
+    <Target Name="FindDLL:Clean">
+        <MSBuild Projects="..\FindDLL\FindDLL.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="FindDLL:Make">
+        <MSBuild Projects="..\FindDLL\FindDLL.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="ExecuteDLL">
+        <MSBuild Projects="..\ExecuteDLL\ExecuteDLL.dproj"/>
+    </Target>
+    <Target Name="ExecuteDLL:Clean">
+        <MSBuild Projects="..\ExecuteDLL\ExecuteDLL.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="ExecuteDLL:Make">
+        <MSBuild Projects="..\ExecuteDLL\ExecuteDLL.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="RunTasks;FindDLL;ExecuteDLL"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="RunTasks:Clean;FindDLL:Clean;ExecuteDLL:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="RunTasks:Make;FindDLL:Make;ExecuteDLL:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>
