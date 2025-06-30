@@ -45,6 +45,8 @@ type
     FStateCallback: TStateCallback;
     FFinishCallback: TProc;
     FOperation: TTaskOperation;
+    FRunningThread: TThread;
+    FProcessID: DWORD;
     function GetState: TStateTaskOperation;
   public
     constructor Create; override;
@@ -57,6 +59,8 @@ type
     property Positions: TList<integer> read FPositions write FPositions;
     property StateCallback: TStateCallback read FStateCallback write FStateCallback;
     property FinishCallback: TProc read FFinishCallback write FFinishCallback;
+    property RunningThread: TThread read FRunningThread write FRunningThread;
+    property ProcessID: DWORD read FProcessID write FProcessID;
   end;
 
   TfrmRunTasks = class(TForm)
@@ -161,15 +165,20 @@ begin
 end;
 
 procedure TfrmRunTasks.acStopExecute(Sender: TObject);
+var
+  RunTask: TVSTRunTask;
 begin
-  if FCurrentOperation in [ttoFindFiles, ttoFindInFile] then
-    FFileFinder.Stop;
+  RunTask := vstRunTask.CurrentObj<TVSTRunTask>;
+  if Assigned(RunTask) and (RunTask.Operation in [ttoFindFiles, ttoFindInFile]) then
+    FFileFinder.Stop(RunTask.RunningThread);
 end;
 
 procedure TfrmRunTasks.AddRunTask;
 var
   Task: TVSTTask;
   TaskCommand, TaskParams: string;
+  RunThread: TThread;
+  RunProcessID: DWORD;
   isParamsCorrect: boolean;
 begin
   if FCurrentOperation <> ttoNone then
@@ -179,11 +188,13 @@ begin
     begin
       TaskCommand := beCommand.Text;
       TaskParams := edParams.Text;
+      RunThread := nil;
+      RunProcessID := 0;
       isParamsCorrect := true;
       case FCurrentOperation of
         ttoFindFiles,
-        ttoFindInFile: isParamsCorrect := FFileFinder.ExecuteTask(Task.TaskInfoName, TaskCommand + ',' + TaskParams) = 0;
-        ttoShellExecute: isParamsCorrect := FShellExecuter.ExecuteTask(Task.TaskInfoName, TaskCommand) = 0;
+        ttoFindInFile: RunThread := FFileFinder.ExecuteTask(Task.TaskInfoName, TaskCommand + ',' + TaskParams);
+        ttoShellExecute: RunProcessID := FShellExecuter.ExecuteShellCommand(TaskCommand);
       end;
       if isParamsCorrect then
       begin
@@ -193,29 +204,37 @@ begin
           if FCurrentOperation = ttoShellExecute then
           begin
             Command := TaskCommand;
+            ProcessID := RunProcessID;
             StateCallback :=
             function: boolean
             begin
-              Result := FShellExecuter.WaitForCommandCompletion(1);
+              Result := FShellExecuter.WaitForCommandCompletion(ProcessID, 1);
             end;
             State := tstoRun;
           end
             else
           begin
             Operation := FCurrentOperation;
+            RunningThread := RunThread;
             Command := TaskCommand + ',' + TaskParams;
             StateCallback :=
             function: boolean
             begin
-              Result := FFileFinder.CheckRunning;
+              Result := FFileFinder.CheckRunning(RunningThread);
             end;
             FinishCallback :=
             procedure
             begin
               if Operation = ttoFindFiles then
-                FFilePaths.AddStrings(FFileFinder.GetFilePaths)
+              begin
+                if Assigned(FFileFinder.GetFilePaths(RunningThread)) then
+                  FFilePaths.AddStrings(FFileFinder.GetFilePaths(RunningThread))
+              end
               else
-                FPositions.AddRange(FFileFinder.GetPositions);
+              begin
+                if Assigned(FFileFinder.GetPositions(RunningThread)) then
+                  FPositions.AddRange(FFileFinder.GetPositions(RunningThread));
+              end;
             end;
             State := tstoRun;
           end;
@@ -239,20 +258,23 @@ end;
 procedure TfrmRunTasks.alRunTasksUpdate(Action: TBasicAction; var Handled: Boolean);
 var
   CorrectCurrentOperation, CorrectCommand, IsRunning: boolean;
+  RunTask: TVSTRunTask;
 begin
   CorrectCurrentOperation := (FCurrentOperation <> ttoNone);
   CorrectCommand := (beCommand.Text <> '');
-  IsRunning := false;
+  RunTask := vstRunTask.CurrentObj<TVSTRunTask>;
+  if Assigned(RunTask) then
+    IsRunning := RunTask.State = tstoRun
+  else
+    IsRunning := false;
   case FCurrentOperation of
     ttoFindFiles,
     ttoFindInFile:
       begin
         CorrectCommand := CorrectCommand and (edParams.Text <> '');
-        IsRunning := FFileFinder.CheckRunning;
       end;
-    ttoShellExecute: IsRunning := FShellExecuter.WaitForCommandCompletion(1);
   end;
-  acRun.Enabled := CorrectCurrentOperation and CorrectCommand and not IsRunning;
+  acRun.Enabled := CorrectCurrentOperation and CorrectCommand;
   acStop.Enabled := CorrectCurrentOperation and CorrectCommand and IsRunning;
 end;
 
@@ -377,6 +399,7 @@ begin
   if Assigned(Task) then
   begin
     FCurrentOperation := task.Operation;
+    lgParams.Visible := true;
     liParams.Visible := true;
     lgParams.CaptionOptions.Text := 'Параметры операции: ' + task.TaskInfoName;
     case task.Operation of
@@ -443,6 +466,8 @@ begin
   FNeedToCheckRun := true;
   FStateCallback := nil;
   FFinishCallback := nil;
+  FRunningThread := nil;
+  FProcessID := 0;
 end;
 
 destructor TVSTRunTask.Destroy;

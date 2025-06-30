@@ -60,7 +60,7 @@ begin
   if Assigned(FocusedNode) then
     Result := obj<T>(FocusedNode, false)
   else
-    Result := obj<T>(GetFirst, false);
+    Result := nil;
 end;
 
 function vstHelper.obj<T>(ANode: PVirtualNode; needCreate: boolean): T;

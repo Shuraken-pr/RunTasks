@@ -5,32 +5,52 @@ uses
   System.Classes,
   TaskAPI in '..\Common\TaskAPI.pas',
   SyncObjs,
-  Generics.Collections;
+  Generics.Collections,
+  System.Masks,
+  uAnonumousThreadPool in '..\Common\uAnonumousThreadPool.pas';
 
 type
+  TResultTask = class(TObject)
+  private
+    FPositions: TList<integer>;
+    FFilePaths: TStringList;
+    FIsSearching: boolean;
+    FThread: TThread;
+    FSearchMasks: TStringList;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    property SearchMasks: TStringList read FSearchMasks write FSearchMasks;
+    property IsSearching: boolean read FIsSearching write FIsSearching;
+    property FilePaths: TStringList read FFilePaths write FFilePaths;
+    property Positions: TList<integer> read FPositions write FPositions;
+    property Thread: TThread read FThread write FThread;
+  end;
+
+  TResultTaskList = class(TObjectList<TResultTask>)
+     function FindResultTaskByThread(AThread: TThread): TResultTask;
+  end;
+
   TFindFilesTask = class(TInterfacedObject, ITaskProvider, IFileFinder)
   private
-    FThread: TThread;
-    FFilePaths: TStringList;
     FSearchMask: string;
     FRootPath: string;
     FFileName: string;
     FStringToFind: string;
-    FIsSearching: Boolean;
-    FLock: TCriticalSection;
-    FPositions: TList<integer>;
-    procedure FindFilesInDir(const Dir: string);
-    function CountStringOccurrences(const FileName, StringToFind: string): integer;
+    FThreadPool: TAnonumousThreadPool;
+    FResultTaskList: TResultTaskList;
+    procedure FindFilesInDir(const Dir: string; SearchMasks: TStringList; const IsSearching: boolean; FilePaths: TStringList);
+    function CountStringOccurrences(const FileName, StringToFind: string; const IsSearching: boolean; Positions: TList<integer>): integer;
   public
     constructor Create;
     destructor Destroy; override;
     function GetTasks: TArray<TTaskInfo>;
-    function ExecuteTask(const TaskName: string; const Params: string): Integer;
-    procedure Start(const Command, Param: string; operation: integer);
-    procedure Stop;
-    function GetFilePaths: TStringList;
-    function GetPositions: TList<integer>;
-    function CheckRunning: boolean;
+    function ExecuteTask(const TaskName: string; const Params: string): TThread;
+    function Start(const Command, Param: string; operation: integer): TThread;
+    procedure Stop(AThread: TThread);
+    function GetFilePaths(AThread: TThread): TStringList;
+    function GetPositions(AThread: TThread): TList<integer>;
+    function CheckRunning(AThread: TThread): boolean;
   end;
 
 {$R *.res}
@@ -39,31 +59,27 @@ type
 
 constructor TFindFilesTask.Create;
 begin
-  FFilePaths := TStringList.Create;
-  FIsSearching := False;
-  FLock := TCriticalSection.Create;
-  FPositions := TList<integer>.Create;
   FRootPath := '';
   FSearchMask := '';
   FFileName := '';
   FStringToFind := '';
+  FThreadPool := TAnonumousThreadPool.Create;
+  FResultTaskList := TResultTaskList.Create(true);
 end;
 
 destructor TFindFilesTask.Destroy;
 begin
-  Stop;
-  FFilePaths.Free;
-  FLock.Free;
-  FPositions.Free;
+  FThreadPool.Free;
+  FResultTaskList.Free;
   inherited;
 end;
 
-function TFindFilesTask.ExecuteTask(const TaskName, Params: string): Integer;
+function TFindFilesTask.ExecuteTask(const TaskName, Params: string): TThread;
 var
   path, FileName, stringToFind, mask: string;
   splitter: integer;
 begin
-  Result := -1;
+  Result := nil;
   if TaskName = 'Поиск файлов' then
   begin
     splitter := params.IndexOf(',');
@@ -73,8 +89,7 @@ begin
       mask := Params.Substring(splitter + 1);
       if DirectoryExists(path) and (pos('*.', mask) > 0) and (length(mask) > 2) then
       begin
-        Result := 0;
-        Start(path, mask, 0);
+        Result := Start(path, mask, 0);
       end;
     end;
   end
@@ -87,30 +102,35 @@ begin
       stringToFind := Params.Substring(splitter + 1);
       if FileExists(FileName) and (length(stringToFind) > 0) then
       begin
-        Result := 0;
-        Start(FileName, stringToFind, 1);
+        Result := Start(FileName, stringToFind, 1);
       end;
     end;
   end;
 end;
 
-procedure TFindFilesTask.FindFilesInDir(const Dir: string);
+procedure TFindFilesTask.FindFilesInDir(const Dir: string; SearchMasks: TStringList; const IsSearching: boolean; FilePaths: TStringList);
 var
+  SearchMask: string;
   SearchRec: TSearchRec;
 begin
-  if FindFirst(IncludeTrailingPathDelimiter(Dir) + FSearchMask, faAnyFile, SearchRec) = 0 then
+  if FindFirst(IncludeTrailingPathDelimiter(Dir) + '*', faAnyFile, SearchRec) = 0 then
   begin
     try
       repeat
-        if not FIsSearching then Exit; // Проверяем флаг остановки
-        FFilePaths.Add(IncludeTrailingPathDelimiter(Dir) + SearchRec.Name);
+        if not IsSearching then
+          Exit; // Проверяем флаг остановки
+        for SearchMask in SearchMasks do
+        begin
+          if MatchesMask(SearchRec.Name, SearchMask) then
+            FilePaths.Add(IncludeTrailingPathDelimiter(Dir) + SearchRec.Name);
+        end;
       until FindNext(SearchRec) <> 0;
     finally
       FindClose(SearchRec);
     end;
   end;
 
-  if not FIsSearching then
+  if not IsSearching then
     Exit; // Проверяем флаг остановки
 
   // Рекурсивный поиск в подкаталогах
@@ -120,7 +140,7 @@ begin
       repeat
         if (SearchRec.Attr and faDirectory <> 0) and (SearchRec.Name <> '.') and (SearchRec.Name <> '..') then
         begin
-          FindFilesInDir(IncludeTrailingPathDelimiter(Dir) + SearchRec.Name);
+          FindFilesInDir(IncludeTrailingPathDelimiter(Dir) + SearchRec.Name, SearchMasks, IsSearching, FilePaths);
         end;
       until FindNext(SearchRec) <> 0;
     finally
@@ -129,14 +149,24 @@ begin
   end;
 end;
 
-function TFindFilesTask.GetFilePaths: TStringList;
+function TFindFilesTask.GetFilePaths(AThread: TThread): TStringList;
+var
+  ResultTask: TResultTask;
 begin
-  Result := FFilePaths;
+  Result := nil;
+  ResultTask := FResultTaskList.FindResultTaskByThread(AThread);
+  if Assigned(ResultTask) then
+    Result := ResultTask.FilePaths;
 end;
 
-function TFindFilesTask.GetPositions: TList<integer>;
+function TFindFilesTask.GetPositions(AThread: TThread): TList<integer>;
+var
+  ResultTask: TResultTask;
 begin
-  Result := FPositions;
+  Result := nil;
+  ResultTask := FResultTaskList.FindResultTaskByThread(AThread);
+  if Assigned(ResultTask) then
+    Result := ResultTask.Positions;
 end;
 
 function TFindFilesTask.GetTasks: TArray<TTaskInfo>;
@@ -148,116 +178,122 @@ begin
   Result[1].Parameters := 'Файл, строка для поиска';
 end;
 
-procedure TFindFilesTask.Start(const Command, Param: string; operation: integer);
+function TFindFilesTask.Start(const Command, Param: string; operation: integer): TThread;
+var
+  ResultTask: TResultTask;
 begin
-  FLock.Acquire;
-  try
-    if not FIsSearching then
-    begin
-      FIsSearching := True;
-      if operation = 0 then
-      begin
-        FSearchMask := Param;
-        FRootPath := Command;
-      end
-        else
-      begin
-        FFileName := Command;
-        FStringToFind := Param;
-      end;
-      FThread := TThread.CreateAnonymousThread(
-        procedure
-        begin
-          if operation = 0 then
-            FindFilesInDir(FRootPath)
-          else
-            CountStringOccurrences(FFileName, FStringToFind);
-          FLock.Acquire;
-          try
-            FIsSearching := False;
-          finally
-            FLock.Release;
-          end;
-        end
-      );
-      FThread.FreeOnTerminate := true;
-      FThread.Start;
-    end;
-  finally
-    FLock.Release;
+  ResultTask := TResultTask.Create;
+  if operation = 0 then
+  begin
+    ResultTask.SearchMasks.Delimiter := ';';
+    ResultTask.SearchMasks.DelimitedText := Param;
+    FRootPath := Command;
+  end
+    else
+  begin
+    FFileName := Command;
+    FStringToFind := Param;
   end;
+  Result := FThreadPool.Start(
+  procedure
+  begin
+    if operation = 0 then
+      FindFilesInDir(FRootPath, ResultTask.SearchMasks, ResultTask.IsSearching, ResultTask.FilePaths)
+    else
+      CountStringOccurrences(FFileName, FStringToFind, ResultTask.IsSearching, ResultTask.Positions);
+    ResultTask.IsSearching := False;
+  end
+  );
+  ResultTask.Thread := Result;
+  FResultTaskList.Add(ResultTask);
 end;
 
-procedure TFindFilesTask.Stop;
+procedure TFindFilesTask.Stop(AThread: TThread);
+var
+  ResultTask: TResultTask;
 begin
-  FLock.Acquire;
-  try
-    if Assigned(FThread) and FIsSearching then // Проверяем, что поток существует и активен
-    begin
-      FIsSearching := False; // Устанавливаем флаг остановки
-      FThread.Terminate;    // Просим поток завершиться
-      FLock.Release;        // Освобождаем лок перед ожиданием, чтобы поток мог его захватить при завершении
-      FThread.WaitFor;      // Ждем фактического завершения потока
-      FLock.Acquire;        // Снова захватываем лок
-      FThread := nil;       // Обнуляем ссылку после завершения и освобождения потока
-    end
-    else if Assigned(FThread) then // Если поток существует, но не активен (уже завершился сам)
-      FThread := nil; // Просто обнуляем ссылку
-    FIsSearching := False; // Убеждаемся, что флаг сброшен
-  finally
-    FLock.Release;
-  end;
+  ResultTask := FResultTaskList.FindResultTaskByThread(AThread);
+  if Assigned(ResultTask) then
+    ResultTask.IsSearching := false;
+  FThreadPool.Stop(AThread);
 end;
 
-function TFindFilesTask.CheckRunning: boolean;
+function TFindFilesTask.CheckRunning(AThread: TThread): boolean;
+var
+  ResultTask: TResultTask;
 begin
-  Result := FIsSearching;
+  Result := false;
+  ResultTask := FResultTaskList.FindResultTaskByThread(AThread);
+  if Assigned(ResultTask) then
+    Result := ResultTask.IsSearching;
 end;
 
-function TFindFilesTask.CountStringOccurrences(const FileName, StringToFind: string): integer;
+function TFindFilesTask.CountStringOccurrences(const FileName, StringToFind: string; const IsSearching: boolean; Positions: TList<integer>): integer;
 var
   Stream: TFileStream;
   Buffer: array of Byte;
   BufferSize: Integer;
   BytesRead, searchStringLength: integer;
   CurrentPosition: Integer;
+  SearchStrings: TStringList;
   SearchString: AnsiString;
-  i: integer;
+  i, j: integer;
 begin
   Result := 0;
-  if Assigned(FPositions) then
-    FPositions.Clear;
-  Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+  if Assigned(Positions) then
+    Positions.Clear;
+
+  // Разделяем строки поиска по запятой
+  SearchStrings := TStringList.Create;
   try
-    BufferSize := 4096; // Оптимальный размер буфера
-    SetLength(Buffer, BufferSize);
-    SearchString := AnsiString(StringToFind); // Преобразуем строку в AnsiString
-    searchStringLength := Length(SearchString);
-    CurrentPosition := 0;
+    SearchStrings.Delimiter := ',';
+    SearchStrings.StrictDelimiter := True;
+    SearchStrings.DelimitedText := StringToFind;
 
-    while True do
-    begin
-      if not FIsSearching then
-        Exit; // Проверяем флаг остановки
-      BytesRead := Stream.Read(Buffer[0], BufferSize);
-      if BytesRead = 0 then
-        Break;
+    // Если список пустой, возвращаем 0
+    if SearchStrings.Count = 0 then
+      Exit;
 
-      // Ищем в буфере
-      for i := 0 to BytesRead - searchStringLength do
+    Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+    try
+      BufferSize := 4096; // Оптимальный размер буфера
+      SetLength(Buffer, BufferSize);
+      CurrentPosition := 0;
+
+      while True do
       begin
-        if CompareMem(@Buffer[i], PAnsiChar(SearchString), Length(SearchString)) then
-        begin
-          if Assigned(FPositions) then
-            FPositions.Add(CurrentPosition + i);
-          Inc(Result); // Увеличиваем счетчик
-        end;
-      end;
+        if not IsSearching then
+          Exit; // Проверяем флаг остановки
 
-      CurrentPosition := CurrentPosition + BytesRead; // Обновляем текущую позицию
+        BytesRead := Stream.Read(Buffer[0], BufferSize);
+        if BytesRead = 0 then
+          Break;
+
+        // Проверяем каждую строку поиска
+        for j := 0 to SearchStrings.Count - 1 do
+        begin
+          SearchString := AnsiString(SearchStrings[j]);
+          searchStringLength := Length(SearchString);
+
+          // Ищем в буфере
+          for i := 0 to BytesRead - searchStringLength do
+          begin
+            if CompareMem(@Buffer[i], PAnsiChar(SearchString), Length(SearchString)) then
+            begin
+              if Assigned(Positions) then
+                Positions.Add(CurrentPosition + i);
+              Inc(Result); // Увеличиваем счетчик
+            end;
+          end;
+        end;
+
+        CurrentPosition := CurrentPosition + BytesRead; // Обновляем текущую позицию
+      end;
+    finally
+      Stream.Free;
     end;
   finally
-    Stream.Free;
+    SearchStrings.Free;
   end;
 end;
 
@@ -269,6 +305,42 @@ end;
 
 exports
   CreateTaskProvider;
+
+{ TResultTask }
+
+constructor TResultTask.Create;
+begin
+  inherited;
+  FSearchMasks := TStringList.Create;
+  FFilePaths := TStringList.Create;
+  FIsSearching := true;
+  FPositions := TList<integer>.Create;
+  FThread := nil;
+end;
+
+destructor TResultTask.Destroy;
+begin
+  FreeAndNil(FSearchMasks);
+  FreeAndNil(FFilePaths);
+  FreeAndNil(FPositions);
+  FThread := nil;
+  inherited;
+end;
+
+{ TResultTaskList }
+
+function TResultTaskList.FindResultTaskByThread(AThread: TThread): TResultTask;
+var
+  task: TResultTask;
+begin
+  Result := nil;
+  for task in Self do
+    if task.Thread = AThread then
+    begin
+      Result := task;
+      exit;
+    end;
+end;
 
 begin
 end.

@@ -4,7 +4,9 @@ interface
 
 uses
   SysUtils, Classes,
-  Generics.Collections;
+  Generics.Collections,
+  Threading,
+  Winapi.Windows;
 
 type
   TTaskInfo = record
@@ -15,30 +17,27 @@ type
   ITaskProvider = interface
     ['{107439F7-F255-4EF3-9913-2E3950A872FE}']
     function GetTasks: TArray<TTaskInfo>;
-    function ExecuteTask(const TaskName: string; const Params: string): Integer;
+    function ExecuteTask(const TaskName: string; const Params: string): TThread;
   end;
 
   IFileFinder = interface(ITaskProvider)
     ['{DC01A90C-C75D-4541-9697-2D0969373BE7}']
-    procedure Start(const Command, Param: string; operation: integer);
-    procedure Stop;
-    function GetFilePaths: TStringList;
-    function GetPositions: TList<integer>;
-    function CheckRunning: boolean;
+    function Start(const Command, Param: string; operation: integer): TThread;
+    procedure Stop(AThread: TThread);
+    function GetFilePaths(AThread: TThread): TStringList;
+    function GetPositions(AThread: TThread): TList<integer>;
+    function CheckRunning(AThread: TThread): boolean;
   end;
 
   IShellExecuter = interface(ITaskProvider)
     ['{C72B8096-E830-4FB0-8074-779B4A6650C2}']
-    function ExecuteShellCommand(const Command: string): Boolean;
-    function WaitForCommandCompletion(Timeout: integer): Boolean;
+    function ExecuteShellCommand(const Command: string): DWORD;
+    function WaitForCommandCompletion(AProcessID: DWORD; Timeout: integer): Boolean;
   end;
 
   function LoadTaskDLL(const FileName: string): ITaskProvider;
 
 implementation
-
-uses
-  Windows;
 
 function LoadTaskDLL(const FileName: string): ITaskProvider;
 var

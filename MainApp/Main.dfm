@@ -24,7 +24,6 @@ object frmRunTasks: TfrmRunTasks
     Contexts = <>
     TabOrder = 0
     TabStop = False
-    ExplicitWidth = 624
     object rbMainTab1: TdxRibbonTab
       Active = True
       Caption = 'rbMainTab1'
@@ -42,7 +41,6 @@ object frmRunTasks: TfrmRunTasks
     Height = 496
     Align = alLeft
     TabOrder = 1
-    ExplicitHeight = 611
     object beCommand: TcxButtonEdit
       Left = 96
       Top = 33
@@ -87,13 +85,12 @@ object frmRunTasks: TfrmRunTasks
       Top = 131
       Width = 405
       Height = 337
-      Align = alClient
       BevelInner = bvNone
       BevelOuter = bvSpace
       BevelKind = bkFlat
       BorderStyle = bsNone
+      DefaultNodeHeight = 19
       Header.AutoSizeIndex = 0
-      Header.Height = 15
       Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
       LineMode = lmBands
       LineStyle = lsSolid
@@ -129,6 +126,7 @@ object frmRunTasks: TfrmRunTasks
       AlignHorz = ahClient
       AlignVert = avTop
       CaptionOptions.Text = #1055#1072#1088#1072#1084#1077#1090#1088#1099' '#1086#1087#1077#1088#1072#1094#1080#1080
+      Visible = False
       Index = 0
     end
     object lgTasks: TdxLayoutGroup
@@ -175,9 +173,6 @@ object frmRunTasks: TfrmRunTasks
     Top = 101
     Width = 8
     Height = 496
-    ExplicitLeft = 616
-    ExplicitTop = 348
-    ExplicitHeight = 100
   end
   object vstRunTask: TVirtualStringTree
     Left = 469
@@ -188,18 +183,16 @@ object frmRunTasks: TfrmRunTasks
     Align = alClient
     DefaultNodeHeight = 19
     Header.AutoSizeIndex = 0
-    Header.Height = 15
     Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
     LineMode = lmBands
     LineStyle = lsSolid
-    TabOrder = 7
+    TabOrder = 3
     TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toShowHorzGridLines, toShowRoot, toShowTreeLines, toShowVertGridLines, toThemeAware, toUseBlendedImages, toFullVertGridLines]
     TreeOptions.SelectionOptions = [toFullRowSelect, toSelectNextNodeOnRemoval]
     OnChange = vstRunTaskChange
     OnGetText = vstRunTaskGetText
     Touch.InteractiveGestures = [igPan, igPressAndTap]
     Touch.InteractiveGestureOptions = [igoPanSingleFingerHorizontal, igoPanSingleFingerVertical, igoPanInertia, igoPanGutter, igoParentPassthrough]
-    ExplicitWidth = 476
     Columns = <
       item
         Position = 0
@@ -223,7 +216,6 @@ object frmRunTasks: TfrmRunTasks
     Width = 8
     Height = 496
     AlignSplitter = salRight
-    ExplicitLeft = 1061
   end
   object mResult: TMemo
     Left = 1015
@@ -234,7 +226,7 @@ object frmRunTasks: TfrmRunTasks
     Lines.Strings = (
       'mResult')
     ScrollBars = ssVertical
-    TabOrder = 9
+    TabOrder = 5
   end
   object bmMain: TdxBarManager
     Font.Charset = DEFAULT_CHARSET
