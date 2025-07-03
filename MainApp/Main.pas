@@ -1,5 +1,6 @@
 unit Main;
 
+{$i RunTasks.inc}
 interface
 
 uses
@@ -45,7 +46,7 @@ type
     FStateCallback: TStateCallback;
     FFinishCallback: TProc;
     FOperation: TTaskOperation;
-    FRunningThread: TThread;
+    FRunningThread: TResultThread;
     FProcessID: DWORD;
     function GetState: TStateTaskOperation;
   public
@@ -59,7 +60,7 @@ type
     property Positions: TList<integer> read FPositions write FPositions;
     property StateCallback: TStateCallback read FStateCallback write FStateCallback;
     property FinishCallback: TProc read FFinishCallback write FFinishCallback;
-    property RunningThread: TThread read FRunningThread write FRunningThread;
+    property RunningThread: TResultThread read FRunningThread write FRunningThread;
     property ProcessID: DWORD read FProcessID write FProcessID;
   end;
 
@@ -177,7 +178,7 @@ procedure TfrmRunTasks.AddRunTask;
 var
   Task: TVSTTask;
   TaskCommand, TaskParams: string;
-  RunThread: TThread;
+  RunThread: TResultThread;
   RunProcessID: DWORD;
   isParamsCorrect: boolean;
 begin
@@ -188,7 +189,11 @@ begin
     begin
       TaskCommand := beCommand.Text;
       TaskParams := edParams.Text;
+      {$ifdef use_otl}
+      RunThread := 0;
+      {$else}
       RunThread := nil;
+      {$endif}
       RunProcessID := 0;
       isParamsCorrect := true;
       case FCurrentOperation of
@@ -466,7 +471,11 @@ begin
   FNeedToCheckRun := true;
   FStateCallback := nil;
   FFinishCallback := nil;
+  {$ifdef use_otl}
+  FRunningThread := 0;
+  {$else}
   FRunningThread := nil;
+  {$endif}
   FProcessID := 0;
 end;
 

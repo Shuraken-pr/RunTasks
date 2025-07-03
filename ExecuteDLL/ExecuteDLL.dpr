@@ -1,13 +1,13 @@
 library ExecuteDLL;
 
 
+{$i RunTasks.inc}
 uses
   System.SysUtils,
   System.Classes,
   Windows,
   Generics.Collections,
-  TaskAPI in '..\Common\TaskAPI.pas',
-  uAnonumousThreadPool in '..\Common\uAnonumousThreadPool.pas';
+  TaskAPI in '..\Common\TaskAPI.pas';
 
 type
   TShellExecuter = class(TInterfacedObject, ITaskProvider, IShellExecuter)
@@ -17,7 +17,7 @@ type
     constructor Create;
     destructor Destroy; override;
     function GetTasks: TArray<TTaskInfo>;
-    function ExecuteTask(const TaskName: string; const Params: string): TThread;
+    function ExecuteTask(const TaskName: string; const Params: string): TResultThread;
     function ExecuteShellCommand(const Command: string): DWORD;
     function WaitForCommandCompletion(AProcessID: DWORD; Timeout: integer): Boolean;
   end;
@@ -60,9 +60,13 @@ begin
   end;
 end;
 
-function TShellExecuter.ExecuteTask(const TaskName, Params: string): TThread;
+function TShellExecuter.ExecuteTask(const TaskName, Params: string): TResultThread;
 begin
+  {$ifdef use_otl}
+  Result := 0;
+  {$else}
   Result := nil;
+  {$endif}
   if Params.Length > 0 then
     ExecuteShellCommand(Params);
 end;

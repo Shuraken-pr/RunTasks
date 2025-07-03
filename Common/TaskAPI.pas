@@ -1,5 +1,6 @@
 unit TaskAPI;
 
+{$i RunTasks.inc}
 interface
 
 uses
@@ -14,19 +15,27 @@ type
     Parameters: string;
   end;
 
+type
+  TResultThread =
+  {$ifdef use_otl}
+    integer
+  {$else}
+    TThread
+  {$endif}
+  ;
   ITaskProvider = interface
     ['{107439F7-F255-4EF3-9913-2E3950A872FE}']
     function GetTasks: TArray<TTaskInfo>;
-    function ExecuteTask(const TaskName: string; const Params: string): TThread;
+    function ExecuteTask(const TaskName: string; const Params: string): TResultThread;
   end;
 
   IFileFinder = interface(ITaskProvider)
     ['{DC01A90C-C75D-4541-9697-2D0969373BE7}']
-    function Start(const Command, Param: string; operation: integer): TThread;
-    procedure Stop(AThread: TThread);
-    function GetFilePaths(AThread: TThread): TStringList;
-    function GetPositions(AThread: TThread): TList<integer>;
-    function CheckRunning(AThread: TThread): boolean;
+    function Start(const Command, Param: string; operation: integer): TResultThread;
+    procedure Stop(AThread: TResultThread);
+    function GetFilePaths(AThread: TResultThread): TStringList;
+    function GetPositions(AThread: TResultThread): TList<integer>;
+    function CheckRunning(AThread: TResultThread): boolean;
   end;
 
   IShellExecuter = interface(ITaskProvider)

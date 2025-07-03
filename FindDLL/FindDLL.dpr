@@ -1,5 +1,7 @@
 library FindDLL;
 
+
+{$i RunTasks.inc}
 uses
   System.SysUtils,
   System.Classes,
@@ -7,7 +9,12 @@ uses
   SyncObjs,
   Generics.Collections,
   System.Masks,
-  uAnonumousThreadPool in '..\Common\uAnonumousThreadPool.pas';
+  {$ifdef use_otl}
+  uOTLThreadManager in '..\Common\uOTLThreadManager.pas'
+  {$else}
+  uAnonumousThreadPool in '..\Common\uAnonumousThreadPool.pas'
+  {$endif}
+  ;
 
 type
   TResultTask = class(TObject)
@@ -15,7 +22,7 @@ type
     FPositions: TList<integer>;
     FFilePaths: TStringList;
     FIsSearching: boolean;
-    FThread: TThread;
+    FThread: TResultThread;
     FSearchMasks: TStringList;
   public
     constructor Create;
@@ -24,11 +31,11 @@ type
     property IsSearching: boolean read FIsSearching write FIsSearching;
     property FilePaths: TStringList read FFilePaths write FFilePaths;
     property Positions: TList<integer> read FPositions write FPositions;
-    property Thread: TThread read FThread write FThread;
+    property Thread: TResultThread read FThread write FThread;
   end;
 
   TResultTaskList = class(TObjectList<TResultTask>)
-     function FindResultTaskByThread(AThread: TThread): TResultTask;
+     function FindResultTaskByThread(AThread: TResultThread): TResultTask;
   end;
 
   TFindFilesTask = class(TInterfacedObject, ITaskProvider, IFileFinder)
@@ -37,7 +44,11 @@ type
     FRootPath: string;
     FFileName: string;
     FStringToFind: string;
+  {$ifdef use_otl}
+    FThreadPool: TThreadManager;
+  {$else}
     FThreadPool: TAnonumousThreadPool;
+  {$endif}
     FResultTaskList: TResultTaskList;
     procedure FindFilesInDir(const Dir: string; SearchMasks: TStringList; const IsSearching: boolean; FilePaths: TStringList);
     function CountStringOccurrences(const FileName, StringToFind: string; const IsSearching: boolean; Positions: TList<integer>): integer;
@@ -45,12 +56,12 @@ type
     constructor Create;
     destructor Destroy; override;
     function GetTasks: TArray<TTaskInfo>;
-    function ExecuteTask(const TaskName: string; const Params: string): TThread;
-    function Start(const Command, Param: string; operation: integer): TThread;
-    procedure Stop(AThread: TThread);
-    function GetFilePaths(AThread: TThread): TStringList;
-    function GetPositions(AThread: TThread): TList<integer>;
-    function CheckRunning(AThread: TThread): boolean;
+    function ExecuteTask(const TaskName, Params: string): TResultThread;
+    function Start(const Command, Param: string; operation: integer): TResultThread;
+    procedure Stop(AThread: TResultThread);
+    function GetFilePaths(AThread: TResultThread): TStringList;
+    function GetPositions(AThread: TResultThread): TList<integer>;
+    function CheckRunning(AThread: TResultThread): boolean;
   end;
 
 {$R *.res}
@@ -63,7 +74,11 @@ begin
   FSearchMask := '';
   FFileName := '';
   FStringToFind := '';
+  {$ifdef use_otl}
+  FThreadPool := TThreadManager.Create;
+  {$else}
   FThreadPool := TAnonumousThreadPool.Create;
+  {$endif}
   FResultTaskList := TResultTaskList.Create(true);
 end;
 
@@ -74,12 +89,16 @@ begin
   inherited;
 end;
 
-function TFindFilesTask.ExecuteTask(const TaskName, Params: string): TThread;
+function TFindFilesTask.ExecuteTask(const TaskName, Params: string): TResultThread;
 var
   path, FileName, stringToFind, mask: string;
   splitter: integer;
 begin
+  {$ifdef use_otl}
+  Result := 0;
+  {$else}
   Result := nil;
+  {$endif}
   if TaskName = 'Поиск файлов' then
   begin
     splitter := params.IndexOf(',');
@@ -149,7 +168,7 @@ begin
   end;
 end;
 
-function TFindFilesTask.GetFilePaths(AThread: TThread): TStringList;
+function TFindFilesTask.GetFilePaths(AThread: TResultThread): TStringList;
 var
   ResultTask: TResultTask;
 begin
@@ -159,7 +178,7 @@ begin
     Result := ResultTask.FilePaths;
 end;
 
-function TFindFilesTask.GetPositions(AThread: TThread): TList<integer>;
+function TFindFilesTask.GetPositions(AThread: TResultThread): TList<integer>;
 var
   ResultTask: TResultTask;
 begin
@@ -178,7 +197,7 @@ begin
   Result[1].Parameters := 'Файл, строка для поиска';
 end;
 
-function TFindFilesTask.Start(const Command, Param: string; operation: integer): TThread;
+function TFindFilesTask.Start(const Command, Param: string; operation: integer): TResultThread;
 var
   ResultTask: TResultTask;
 begin
@@ -208,7 +227,7 @@ begin
   FResultTaskList.Add(ResultTask);
 end;
 
-procedure TFindFilesTask.Stop(AThread: TThread);
+procedure TFindFilesTask.Stop(AThread: TResultThread);
 var
   ResultTask: TResultTask;
 begin
@@ -218,7 +237,7 @@ begin
   FThreadPool.Stop(AThread);
 end;
 
-function TFindFilesTask.CheckRunning(AThread: TThread): boolean;
+function TFindFilesTask.CheckRunning(AThread: TResultThread): boolean;
 var
   ResultTask: TResultTask;
 begin
@@ -315,7 +334,11 @@ begin
   FFilePaths := TStringList.Create;
   FIsSearching := true;
   FPositions := TList<integer>.Create;
+  {$ifdef use_otl}
+  FThread := 0;
+  {$else}
   FThread := nil;
+  {$endif}
 end;
 
 destructor TResultTask.Destroy;
@@ -323,13 +346,17 @@ begin
   FreeAndNil(FSearchMasks);
   FreeAndNil(FFilePaths);
   FreeAndNil(FPositions);
+  {$ifdef use_otl}
+  FThread := 0;
+  {$else}
   FThread := nil;
+  {$endif}
   inherited;
 end;
 
 { TResultTaskList }
 
-function TResultTaskList.FindResultTaskByThread(AThread: TThread): TResultTask;
+function TResultTaskList.FindResultTaskByThread(AThread: TResultThread): TResultTask;
 var
   task: TResultTask;
 begin

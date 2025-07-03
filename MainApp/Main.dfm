@@ -117,7 +117,6 @@ object frmRunTasks: TfrmRunTasks
       AlignHorz = ahClient
       AlignVert = avClient
       Hidden = True
-      ItemIndex = 1
       ShowBorder = False
       Index = -1
     end
